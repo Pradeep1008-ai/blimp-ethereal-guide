@@ -1,80 +1,48 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged, User } from "firebase/auth";
+
 import { AuthCard } from "@/components/auth/AuthCard";
 import { Dashboard } from "@/components/dashboard/Dashboard";
-import { Profile } from "@/components/profile/Profile";
-import { ChatRoom } from "@/components/chat/ChatRoom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-type AppState = "auth" | "dashboard" | "profile" | "chat";
+import { ChatRoom } from "@/components/chat/ChatRoom"; // NEW: Import ChatRoom
 
 const Index = () => {
-  const [currentView, setCurrentView] = useState<AppState>("auth");
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeRoom, setActiveRoom] = useState<{ id: string; name: string } | null>(null); // NEW: State to track the active room
 
-  const renderCurrentView = () => {
-    switch (currentView) {
-      case "auth":
-        return <AuthCard />;
-      case "dashboard":
-        return <Dashboard />;
-      case "profile":
-        return <Profile />;
-      case "chat":
-        return <ChatRoom />;
-      default:
-        return <AuthCard />;
-    }
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleSelectRoom = (room: { id: string; name: string }) => {
+    setActiveRoom(room);
   };
 
-  return (
-    <div className="min-h-screen">
-      {/* Demo Navigation - Fixed positioned for easy access */}
-      <div className="fixed top-6 left-6 z-50">
-        <Card className="glass-panel border-glass-border">
-          <CardHeader>
-            <CardTitle className="text-sm text-foreground">Blimp UI Demo</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Button
-              variant={currentView === "auth" ? "default" : "glass"}
-              size="sm"
-              onClick={() => setCurrentView("auth")}
-              className="w-full justify-start text-xs"
-            >
-              🔐 Login
-            </Button>
-            <Button
-              variant={currentView === "dashboard" ? "default" : "glass"}
-              size="sm"
-              onClick={() => setCurrentView("dashboard")}
-              className="w-full justify-start text-xs"
-            >
-              🏠 Dashboard
-            </Button>
-            <Button
-              variant={currentView === "profile" ? "default" : "glass"}
-              size="sm"
-              onClick={() => setCurrentView("profile")}
-              className="w-full justify-start text-xs"
-            >
-              👤 Profile
-            </Button>
-            <Button
-              variant={currentView === "chat" ? "default" : "glass"}
-              size="sm"
-              onClick={() => setCurrentView("chat")}
-              className="w-full justify-start text-xs"
-            >
-              💬 Chat Room
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+  const handleBackToDashboard = () => {
+    setActiveRoom(null);
+  };
 
-      {/* Main Content */}
-      {renderCurrentView()}
-    </div>
-  );
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading Blimp...</div>;
+  }
+
+  // NEW: Updated render logic
+  const renderContent = () => {
+    if (user) {
+      if (activeRoom) {
+        return <ChatRoom user={user} room={activeRoom} onBack={handleBackToDashboard} />;
+      }
+      return <Dashboard user={user} onSelectRoom={handleSelectRoom} />;
+    }
+    return <AuthCard />;
+  };
+
+  return <div className="min-h-screen">{renderContent()}</div>;
 };
 
 export default Index;

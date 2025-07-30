@@ -3,53 +3,62 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Send, Languages, Wand2, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Send, Trash2, Users } from "lucide-react";
+import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, getDoc, deleteDoc } from "firebase/firestore";
+import { User } from "firebase/auth";
 
 interface Message {
   id: string;
-  user: string;
-  content: string;
-  timestamp: string;
-  isOwn: boolean;
-  avatar?: string;
+  text: string;
+  createdAt: any;
+  uid: string;
+  displayName: string;
+  avatarURL?: string;
 }
 
-export const ChatRoom = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      user: "Alice",
-      content: "Hey everyone! How's it going?",
-      timestamp: "2:30 PM",
-      isOwn: false,
-    },
-    {
-      id: "2",
-      user: "You",
-      content: "Pretty good! Just working on some new designs.",
-      timestamp: "2:32 PM",
-      isOwn: true,
-    },
-    {
-      id: "3",
-      user: "Bob",
-      content: "That sounds interesting! What kind of designs?",
-      timestamp: "2:33 PM",
-      isOwn: false,
-    },
-    {
-      id: "4",
-      user: "You",
-      content: "Glassmorphism UI components. The frosted glass effect is really beautiful!",
-      timestamp: "2:35 PM",
-      isOwn: true,
-    },
-  ]);
+interface ChatRoomProps {
+  user: User;
+  room: { id: string; name: string };
+  onBack: () => void;
+}
 
+interface RoomData {
+  creatorId: string;
+  name: string;
+  members: string[];
+}
+
+const db = getFirestore();
+
+export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [roomName] = useState("General");
-  const [participantCount] = useState(12);
+  const [roomData, setRoomData] = useState<RoomData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const roomRef = doc(db, "rooms", room.id);
+    getDoc(roomRef).then((docSnap) => {
+      if (docSnap.exists()) {
+        setRoomData(docSnap.data() as RoomData);
+      }
+    });
+  }, [room.id]);
+  
+  useEffect(() => {
+    const messagesRef = collection(db, "rooms", room.id, "messages");
+    const q = query(messagesRef, orderBy("createdAt"));
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const msgs: Message[] = [];
+      querySnapshot.forEach((doc) => {
+        msgs.push({ id: doc.id, ...doc.data() } as Message);
+      });
+      setMessages(msgs);
+    });
+
+    return () => unsubscribe();
+  }, [room.id]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -59,28 +68,32 @@ export const ChatRoom = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      const message: Message = {
-        id: Date.now().toString(),
-        user: "You",
-        content: newMessage,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isOwn: true,
-      };
-      setMessages([...messages, message]);
-      setNewMessage("");
+  const handleSendMessage = async () => {
+    if (newMessage.trim() === "") return;
+
+    const messagesRef = collection(db, "rooms", room.id, "messages");
+    await addDoc(messagesRef, {
+      text: newMessage,
+      createdAt: serverTimestamp(),
+      uid: user.uid,
+      displayName: user.displayName,
+      avatarURL: user.photoURL || "",
+    });
+
+    setNewMessage("");
+  };
+
+  const handleDeleteRoom = async () => {
+    if (window.confirm(`Are you sure you want to delete the room "${room.name}"? This cannot be undone.`)) {
+      try {
+        const roomRef = doc(db, "rooms", room.id);
+        await deleteDoc(roomRef);
+        onBack();
+      } catch (error) {
+        console.error("Error deleting room: ", error);
+        alert("Failed to delete room.");
+      }
     }
-  };
-
-  const handleTranslate = () => {
-    // Placeholder for AI translation
-    setNewMessage("Translated: " + newMessage);
-  };
-
-  const handleImprove = () => {
-    // Placeholder for AI improvement
-    setNewMessage("Enhanced: " + newMessage);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -92,106 +105,64 @@ export const ChatRoom = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
       <div className="glass-panel border-b border-glass-border p-4">
         <div className="flex items-center justify-between max-w-6xl mx-auto">
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon" className="rounded-full">
+            <Button onClick={onBack} variant="ghost" size="icon" className="rounded-full">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="text-xl font-semibold text-foreground">#{roomName}</h1>
-              <div className="flex items-center text-sm text-muted-foreground">
-                <Users className="w-4 h-4 mr-1" />
-                {participantCount} participants
-              </div>
+              <h1 className="text-xl font-semibold text-foreground">#{room.name}</h1>
+              {roomData && <div className="flex items-center text-sm text-muted-foreground"><Users className="w-4 h-4 mr-1" />{roomData.members.length} participants</div>}
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="rounded-full text-destructive">
-            <Trash2 className="w-5 h-5" />
-          </Button>
+          
+          {roomData && user.uid === roomData.creatorId && (
+            <Button onClick={handleDeleteRoom} variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10">
+              <Trash2 className="w-5 h-5" />
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Messages Container */}
-      <div className="flex-1 p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="max-w-4xl mx-auto h-full">
           <Card className="glass-panel border-glass-border h-[calc(100vh-200px)] flex flex-col">
-            {/* Messages */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.isOwn ? "justify-end" : "justify-start"}`}
-                >
-                  <div className={`flex items-start space-x-3 max-w-[70%] ${message.isOwn ? "flex-row-reverse space-x-reverse" : ""}`}>
-                    <Avatar className="w-8 h-8 border border-glass-border">
-                      <AvatarImage src={message.avatar} />
-                      <AvatarFallback className="bg-primary text-primary-foreground text-sm">
-                        {message.user[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    
-                    <div className={`glass-panel p-3 rounded-2xl border border-glass-border ${message.isOwn ? "bg-primary/20" : ""}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-foreground">
-                          {message.user}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {message.timestamp}
-                        </span>
+            <div className="flex-1 p-6 space-y-4 overflow-y-auto">
+              {messages.map((message) => {
+                const isOwn = message.uid === user.uid;
+                return (
+                  <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+                    <div className={`flex items-start space-x-3 max-w-[70%] ${isOwn ? "flex-row-reverse space-x-reverse" : ""}`}>
+                      <Avatar className="w-8 h-8 border border-glass-border">
+                        <AvatarImage src={message.avatarURL} />
+                        <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                          {message.displayName?.[0]?.toUpperCase() || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className={`glass-panel p-3 rounded-2xl border border-glass-border ${isOwn ? "bg-primary/20" : ""}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-foreground">{!isOwn ? message.displayName : 'You'}</span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {message.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || ''}
+                          </span>
+                        </div>
+                        <p className="text-foreground whitespace-pre-wrap">{message.text}</p>
                       </div>
-                      <p className="text-foreground">{message.content}</p>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
             <div className="p-6 border-t border-glass-border">
               <div className="glass-panel rounded-2xl border border-glass-border p-4">
                 <div className="flex items-end space-x-3">
-                  <div className="flex-1 space-y-3">
-                    <Input
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Type your message..."
-                      className="border-0 bg-transparent focus:ring-0 focus:border-0 p-0 text-base"
-                    />
-                    
-                    {newMessage && (
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleTranslate}
-                          className="rounded-full h-8 px-3 text-xs"
-                        >
-                          <Languages className="w-3 h-3 mr-1" />
-                          Translate
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleImprove}
-                          className="rounded-full h-8 px-3 text-xs"
-                        >
-                          <Wand2 className="w-3 h-3 mr-1" />
-                          Improve
-                        </Button>
-                      </div>
-                    )}
+                  <div className="flex-1">
+                    <Input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyPress={handleKeyPress} placeholder="Type your message..." className="border-0 bg-transparent focus:ring-0 focus-visible:ring-0 p-0 text-base resize-none" />
                   </div>
-                  
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={!newMessage.trim()}
-                    size="icon"
-                    className="rounded-full glow-primary"
-                  >
+                  <Button onClick={handleSendMessage} disabled={!newMessage.trim()} size="icon" className="rounded-full glow-primary">
                     <Send className="w-4 h-4" />
                   </Button>
                 </div>
