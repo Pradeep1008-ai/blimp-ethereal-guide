@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,30 +6,78 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Camera, Save, User } from "lucide-react";
 
-export const Profile = () => {
-  const [username, setUsername] = useState("Alex Johnson");
-  const [email, setEmail] = useState("alex@example.com");
-  const [bio, setBio] = useState("Love chatting about tech and design!");
-  const [avatarUrl, setAvatarUrl] = useState("");
+// NEW: Firebase imports
+import { auth } from "@/lib/firebase";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { updateProfile, User as FirebaseUser } from "firebase/auth";
 
-  const handleSave = () => {
-    console.log("Profile saved");
-  };
+// NEW: Props for the component
+interface ProfileProps {
+  user: FirebaseUser;
+  onBack: () => void;
+}
 
+const storage = getStorage();
+
+export const Profile = ({ user, onBack }: ProfileProps) => {
+  // NEW: Initialize state with the logged-in user's data
+  const [displayName, setDisplayName] = useState(user.displayName || "");
+  const [email, setEmail] = useState(user.email || "");
+  const [avatarUrl, setAvatarUrl] = useState(user.photoURL || "");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // NEW: handleAvatarChange now sets a preview and saves the file for upload
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setAvatarUrl(url);
+      setAvatarFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setAvatarUrl(previewUrl);
+    }
+  };
+
+  // NEW: handleSave now uploads the avatar and updates the user profile
+  const handleSave = async () => {
+    if (!user) return;
+    setIsLoading(true);
+
+    try {
+      let newPhotoURL = user.photoURL;
+
+      // Step 1: Upload new avatar if one was selected
+      if (avatarFile) {
+        // Create a storage reference: avatars/userId
+        const storageRef = ref(storage, `avatars/${user.uid}`);
+        
+        // Upload the file
+        const snapshot = await uploadBytes(storageRef, avatarFile);
+        
+        // Get the public URL of the uploaded file
+        newPhotoURL = await getDownloadURL(snapshot.ref);
+      }
+
+      // Step 2: Update the user's profile in Firebase Auth
+      await updateProfile(user, {
+        displayName: displayName,
+        photoURL: newPhotoURL,
+      });
+
+      alert("Profile updated successfully!");
+      onBack(); // Go back to the dashboard
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      alert("Failed to update profile.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="flex items-center mb-6">
-          <Button variant="ghost" size="icon" className="mr-4 rounded-full">
+          <Button onClick={onBack} variant="ghost" size="icon" className="mr-4 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <h1 className="text-2xl font-semibold text-foreground">Profile Settings</h1>
@@ -46,100 +94,23 @@ export const Profile = () => {
               </Avatar>
               <label className="absolute bottom-0 right-0 glass-panel w-8 h-8 rounded-full flex items-center justify-center border border-glass-border cursor-pointer hover:glow-soft transition-all">
                 <Camera className="w-4 h-4 text-primary" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                  className="hidden"
-                />
+                <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
               </label>
             </div>
-            <CardTitle className="text-xl text-foreground mt-4">Profile Information</CardTitle>
           </CardHeader>
-
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-foreground font-medium">
-                Username
-              </Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
-              />
+              <Label htmlFor="username" className="text-foreground font-medium">Username</Label>
+              <Input id="username" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Enter your username" />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-foreground font-medium">
-                Email
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-              />
+              <Label htmlFor="email" className="text-foreground font-medium">Email</Label>
+              <Input id="email" type="email" value={email} disabled />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bio" className="text-foreground font-medium">
-                Bio
-              </Label>
-              <Input
-                id="bio"
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell us about yourself"
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-4 pt-4">
-              <Button variant="outline" className="w-full">
-                Cancel
-              </Button>
-              <Button onClick={handleSave} className="w-full">
-                <Save className="w-4 h-4 mr-2" />
-                Save Changes
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Additional Settings */}
-        <Card className="glass-panel border-glass-border mt-6">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground">Preferences</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-4 glass-panel rounded-2xl border border-glass-border">
-              <div>
-                <h3 className="font-medium text-foreground">Notifications</h3>
-                <p className="text-sm text-muted-foreground">Receive message notifications</p>
-              </div>
-              <Button variant="glass" size="sm">
-                Enable
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between p-4 glass-panel rounded-2xl border border-glass-border">
-              <div>
-                <h3 className="font-medium text-foreground">Sound Effects</h3>
-                <p className="text-sm text-muted-foreground">Play sounds for messages</p>
-              </div>
-              <Button variant="glass" size="sm">
-                On
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between p-4 glass-panel rounded-2xl border border-glass-border">
-              <div>
-                <h3 className="font-medium text-foreground">Online Status</h3>
-                <p className="text-sm text-muted-foreground">Show when you're active</p>
-              </div>
-              <Button variant="glass" size="sm">
-                Visible
+              <Button onClick={onBack} variant="outline" className="w-full">Cancel</Button>
+              <Button onClick={handleSave} disabled={isLoading} className="w-full">
+                {isLoading ? "Saving..." : <><Save className="w-4 h-4 mr-2" /> Save Changes</>}
               </Button>
             </div>
           </CardContent>

@@ -18,9 +18,10 @@ const db = getFirestore();
 interface DashboardProps {
   user: User;
   onSelectRoom: (room: { id: string; name: string }) => void;
+  onGoToProfile: () => void;
 }
 
-export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
+export const Dashboard = ({ user, onSelectRoom, onGoToProfile }: DashboardProps) => {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [newRoomName, setNewRoomName] = useState("");
   const [joinRoomName, setJoinRoomName] = useState("");
@@ -40,7 +41,6 @@ export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
     return () => unsubscribe();
   }, [user]);
 
-  // NEW: Updated handleCreateRoom with name suggestion logic
   const handleCreateRoom = async (nameToCreate: string) => {
     if (nameToCreate.trim() === "" || !user) return;
     
@@ -75,7 +75,6 @@ export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
   };
 
   const handleJoinRoom = async () => {
-    // ... (This function remains the same as the last version)
     if (joinRoomName.trim() === "" || !user) return;
     const normalizedName = joinRoomName.trim().toLowerCase();
     try {
@@ -116,7 +115,7 @@ export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              <Button variant="ghost" size="icon" className="rounded-full"><Settings className="w-5 h-5" /></Button>
+              <Button onClick={onGoToProfile} variant="ghost" size="icon" className="rounded-full"><Settings className="w-5 h-5" /></Button>
               <Button onClick={handleLogout} variant="ghost" size="icon" className="rounded-full"><LogOut className="w-5 h-5" /></Button>
             </div>
           </div>
@@ -136,7 +135,6 @@ export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
                       </DialogHeader>
                       <div className="space-y-4">
                         <Input placeholder="Room name" value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)} />
-                        {/* NEW: Updated onClick handler */}
                         <Button onClick={() => handleCreateRoom(newRoomName)} className="w-full">Create Room</Button>
                       </div>
                     </DialogContent>
@@ -185,4 +183,4 @@ export const Dashboard = ({ user, onSelectRoom }: DashboardProps) => {
       </div>
     </div>
   );
-}; 
+};

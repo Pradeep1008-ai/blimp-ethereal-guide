@@ -6,7 +6,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Send, Trash2, Users } from "lucide-react";
 import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, getDoc, deleteDoc } from "firebase/firestore";
 import { User } from "firebase/auth";
+import { geminiModel } from "@/lib/gemini";
 
+// Interface for a message object
 interface Message {
   id: string;
   text: string;
@@ -14,14 +16,18 @@ interface Message {
   uid: string;
   displayName: string;
   avatarURL?: string;
+  modifiedText?: string;
+  modificationType?: 'translate' | 'improve';
 }
 
+// Interface for the component's props
 interface ChatRoomProps {
   user: User;
   room: { id: string; name: string };
   onBack: () => void;
 }
 
+// Interface for the room's data from Firestore
 interface RoomData {
   creatorId: string;
   name: string;
@@ -36,6 +42,7 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Effect to fetch the room's metadata (like creatorId)
   useEffect(() => {
     const roomRef = doc(db, "rooms", room.id);
     getDoc(roomRef).then((docSnap) => {
@@ -45,6 +52,7 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
     });
   }, [room.id]);
   
+  // Effect to fetch messages in real-time
   useEffect(() => {
     const messagesRef = collection(db, "rooms", room.id, "messages");
     const q = query(messagesRef, orderBy("createdAt"));
@@ -60,6 +68,7 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
     return () => unsubscribe();
   }, [room.id]);
 
+  // Effect to scroll to the bottom when new messages arrive
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -68,8 +77,9 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
     scrollToBottom();
   }, [messages]);
 
+  // Function to send a message to Firestore
   const handleSendMessage = async () => {
-    if (newMessage.trim() === "") return;
+    if (newMessage.trim() === "" || !user) return;
 
     const messagesRef = collection(db, "rooms", room.id, "messages");
     await addDoc(messagesRef, {
@@ -83,6 +93,7 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
     setNewMessage("");
   };
 
+  // Function to delete the entire room
   const handleDeleteRoom = async () => {
     if (window.confirm(`Are you sure you want to delete the room "${room.name}"? This cannot be undone.`)) {
       try {
@@ -96,6 +107,42 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
     }
   };
 
+  // Combined AI handler for both translation and improvement
+  const handleAiModification = async (messageId: string, text: string, type: 'translate' | 'improve') => {
+    const messageIndex = messages.findIndex(msg => msg.id === messageId);
+    if (messageIndex === -1 || messages[messageIndex].modifiedText) return;
+
+    const updatedMessages = [...messages];
+    updatedMessages[messageIndex].modifiedText = type === 'translate' ? "Translating..." : "Improving...";
+    updatedMessages[messageIndex].modificationType = type;
+    setMessages(updatedMessages);
+
+    let prompt = "";
+    if (type === 'translate') {
+      prompt = `Translate the following text to English: "${text}"`;
+    } else {
+      prompt = `Correct any spelling mistakes and improve the grammar of the following text, but keep the original meaning. Only return the corrected text: "${text}"`;
+    }
+
+    try {
+      const result = await geminiModel.generateContent(prompt);
+      const response = result.response;
+      const modifiedText = response.text();
+
+      const finalMessages = [...messages];
+      finalMessages[messageIndex].modifiedText = modifiedText;
+      finalMessages[messageIndex].modificationType = type;
+      setMessages(finalMessages);
+    } catch (error) {
+      console.error(`AI ${type} error:`, error);
+      const finalMessages = [...messages];
+      finalMessages[messageIndex].modifiedText = `${type.charAt(0).toUpperCase() + type.slice(1)} failed.`;
+      finalMessages[messageIndex].modificationType = type;
+      setMessages(finalMessages);
+    }
+  };
+
+  // Function to handle Enter key press for sending message
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -140,7 +187,12 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
                           {message.displayName?.[0]?.toUpperCase() || 'U'}
                         </AvatarFallback>
                       </Avatar>
-                      <div className={`glass-panel p-3 rounded-2xl border border-glass-border ${isOwn ? "bg-primary/20" : ""}`}>
+                      <div 
+                        onClick={() => handleAiModification(message.id, message.text, 'translate')}
+                        onDoubleClick={() => !isOwn && handleAiModification(message.id, message.text, 'improve')}
+                        className={`glass-panel p-3 rounded-2xl border border-glass-border cursor-pointer ${isOwn ? "bg-primary/20" : ""}`}
+                        title={isOwn ? "Tap to translate" : "Tap to translate, Double-click to improve"}
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-medium text-foreground">{!isOwn ? message.displayName : 'You'}</span>
                           <span className="text-xs text-muted-foreground ml-2">
@@ -148,6 +200,13 @@ export const ChatRoom = ({ user, room, onBack }: ChatRoomProps) => {
                           </span>
                         </div>
                         <p className="text-foreground whitespace-pre-wrap">{message.text}</p>
+                        {message.modifiedText && (
+                          <div className="pt-2 mt-2 border-t border-glass-border">
+                            <p className="text-sm text-primary italic">
+                              <strong>{message.modificationType === 'translate' ? 'Translation:' : 'Suggestion:'}</strong> {message.modifiedText}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

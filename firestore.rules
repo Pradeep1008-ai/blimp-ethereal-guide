@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Rules for the 'rooms' collection
+    match /rooms/{roomId} {
+      // Any authenticated user can SEARCH (list) the rooms collection.
+      allow list: if request.auth != null;
+
+      // Only MEMBERS can READ the full data of a specific room.
+      allow get: if request.auth.uid in resource.data.members;
+
+      // Any authenticated user can CREATE a room.
+      allow create: if request.auth != null;
+
+      // Any authenticated user can UPDATE a room (e.g., to join it).
+      allow update: if request.auth != null;
+
+      // Only the CREATOR can DELETE a room.
+      allow delete: if request.auth.uid == resource.data.creatorId;
+    }
+
+    // Rules for the 'messages' subcollection
+    match /rooms/{roomId}/messages/{messageId} {
+      // Only members of a room can read or write messages in it.
+      allow read, write: if request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members;
+    }
+  }
+}
