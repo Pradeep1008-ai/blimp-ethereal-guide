@@ -1,7 +1,7 @@
-// src/components/auth/AuthCard.tsx
-
 import { useState } from "react";
-import { loginUser, registerUser } from "@/lib/api"; 
+import { loginUser, registerUser } from "@/lib/api";
+import { auth } from "@/lib/firebase"; // NEW
+import { sendEmailVerification } from "firebase/auth"; // NEW
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserPlus, LogIn, Mail, Lock, User } from "lucide-react";
 
-// The onAuthSuccess prop has been removed
 export const AuthCard = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,30 +21,38 @@ export const AuthCard = () => {
     setIsLoading(true);
     setError('');
     try {
-      // It now just logs in. The listener in Index.tsx will handle the redirect.
       await loginUser({ email, password });
     } catch (err: any) {
       setError(err.message);
-      setIsLoading(false); // Make sure to stop loading on error
+      setIsLoading(false);
     }
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-    try {
-      // It now just registers. The listener in Index.tsx will handle the redirect.
-      await registerUser({ displayName: name, email, password });
-    } catch (err: any) {
-      setError(err.message);
-      setIsLoading(false); // Make sure to stop loading on error
+  e.preventDefault();
+  setIsLoading(true);
+  setError('');
+  try {
+    const userCredential = await registerUser({ displayName: name, email, password });
+
+    // NEW: Define settings with your live URL
+    const actionCodeSettings = {
+      url: 'https://blimp-chat.web.app',
+    };
+
+    if (userCredential.user) {
+      // Pass the settings to the function
+      await sendEmailVerification(userCredential.user, actionCodeSettings);
     }
-  };
+
+  } catch (err: any) {
+    setError(err.message);
+    setIsLoading(false);
+  }
+};
   
-  // The JSX for this component remains exactly the same as before
   return (
-     <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-screen flex items-center justify-center p-6">
       <Card className="glass-panel animate-float w-full max-w-md border-glass-border shadow-2xl">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto w-20 h-20 glass-panel rounded-full flex items-center justify-center glow-soft"><div className="text-3xl">💬</div></div>

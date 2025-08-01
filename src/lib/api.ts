@@ -10,7 +10,7 @@ import {
 /**
  * Registers a new user using Firebase Authentication.
  * @param userData - The user's name, email, and password.
- * @returns The Firebase auth token.
+ * @returns The full UserCredential object from Firebase.
  */
 export const registerUser = async (userData: any) => {
   const { displayName, email, password } = userData;
@@ -18,22 +18,23 @@ export const registerUser = async (userData: any) => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   
   // After creating the user, add their display name to their profile
-  if (auth.currentUser) {
-    await updateProfile(auth.currentUser, { displayName });
+  if (userCredential.user) {
+    await updateProfile(userCredential.user, { displayName });
   }
 
-  const token = await userCredential.user.getIdToken();
-  return { token };
+  // Return the entire credential object
+  return userCredential;
 };
 
 /**
  * Logs in an existing user using Firebase Authentication.
  * @param credentials - The user's email and password.
- * @returns The Firebase auth token.
+ * @returns The full UserCredential object from Firebase.
  */
 export const loginUser = async (credentials: any) => {
   const { email, password } = credentials;
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
-  const token = await userCredential.user.getIdToken();
-  return { token };
+  
+  // Return the entire credential object
+  return userCredential;
 };
